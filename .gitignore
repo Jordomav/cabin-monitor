@@ -1,0 +1,8 @@
+monitor/server/.env
+monitor/server/node_modules/
+monitor/client/node_modules/
+monitor/client/build/
+monitor/server/public/assets/
+.DS_Store
+*.log
+.idea/

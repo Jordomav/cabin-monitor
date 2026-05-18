@@ -1,0 +1,21 @@
+{
+  "name": "cabin-monitor-server",
+  "version": "1.0.0",
+  "description": "CABIN Base Monitor — Node.js server (state, commands, WebSocket, push)",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.0",
+    "express": "^4.19.0",
+    "express-session": "^1.18.0",
+    "web-push": "^3.6.0",
+    "ws": "^8.18.0"
+  }
+}
