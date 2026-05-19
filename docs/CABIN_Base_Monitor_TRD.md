@@ -2,7 +2,7 @@
 ## CABIN Base Monitor — Web Dashboard + Remote Control
 
 ### Overview
-A real time web dashboard accessible from any device (phone, desktop, tablet) that displays the status of all farms, power systems and trains in the CABIN Minecraft base. Supports remote control of farms and push notifications for alerts — even when the dashboard tab is closed.
+A real time web dashboard accessible from any device (phone, desktop, tablet) that displays the status of all farms and power systems in the CABIN Minecraft base. Supports remote control of farms and push notifications for alerts — even when the dashboard tab is closed. (Train monitoring is deferred to V2.)
 
 Data flows:
 ```
@@ -34,7 +34,9 @@ Data flows:
 
 ### 1.1 Data Reporting
 
-The existing central.lua script (which aggregates all farm status) adds an HTTP POST to the Node.js server every update cycle (every 2-5 seconds).
+> **Source of truth for the Minecraft side is `CABIN_Lua_Reference.md`.** `central.lua` is **built fresh** (it does not pre-exist) — a full rednet aggregator + monitor display + web bridge. Farm computers run a single `universal_farm.lua` driven by `farms.json` (the single source of truth), not 18 per-computer scripts. Read that doc for the complete scripts; this section only specifies the web-bridge contract.
+
+`central.lua` aggregates all farm status (received from farm computers over rednet) and adds an HTTP POST to the Node.js server every update cycle (every 2-3 seconds), plus a GET poll for pending commands.
 
 **JSON payload schema:**
 ```json
@@ -47,113 +49,29 @@ The existing central.lua script (which aggregates all farm status) adds an HTTP 
     "state": "NORMAL"
   },
   "farms": {
-    "wood": {
-      "fill": 45,
-      "running": true,
-      "override": false,
-      "online": true,
-      "lastSeen": 1234567885
-    },
-    "iron": {
-      "fill": 78,
-      "running": true,
-      "override": false,
-      "online": true,
-      "lastSeen": 1234567883
-    }
+    "wood": { "fill": 45, "running": true, "override": false, "online": true },
+    "iron": { "fill": 78, "running": true, "override": false, "online": true }
   },
   "alerts": [
-    {
-      "message": "System startup",
-      "level": "INFO",
-      "time": 1234567800
-    }
-  ],
-  "trains": {
-    "oil_tanker": {
-      "status": "in_transit",
-      "lastSeen": 1234567880
-    },
-    "ore_train": {
-      "status": "loading",
-      "lastSeen": 1234567879
-    },
-    "supply_train": {
-      "status": "unloading",
-      "lastSeen": 1234567878
-    }
-  }
+    { "message": "System startup", "level": "INFO", "time": 1234567800 }
+  ]
 }
 ```
 
-**Addition to central.lua:**
-```lua
--- Configuration additions
-local WEB_SERVER_URL = "http://your-droplet-ip:3000"
-local WEB_API_KEY = "your-secret-key"
+**Schema notes (reconciled with `CABIN_Lua_Reference.md`):**
+- `farms.<id>` is **status only**. Keys are farm `id`s that match `farms.json`. Display metadata — label, priority tier, wing, thresholds, color — is **not** in this payload; the dashboard loads it from `farms.json` via `GET /api/farms-config`.
+- `timestamp` and alert `time` are CC:Tweaked-relative (`os.epoch`/`os.clock`) and are **not** used for server-side alerting. Offline detection relies on `central.lua`'s own `online` boolean (central runs its own report-timeout check and flips `online`). There is no `lastSeen` field.
+- `trains` is **deferred to V2** — `central.lua` does not produce train data in V1. The server tolerates a `trains` object if one is ever present, but no V1 UI or alert consumes it.
 
--- Post state to web server
-local function postToWebServer()
-  local payload = {
-    timestamp = os.epoch("utc"),
-    power = powerStatus,
-    farms = farmStatus,
-    alerts = alerts,
-    trains = trainStatus
-  }
-
-  http.request({
-    url = WEB_SERVER_URL .. "/update",
-    method = "POST",
-    headers = {
-      ["Content-Type"] = "application/json",
-      ["X-API-Key"] = WEB_API_KEY
-    },
-    body = textutils.serializeJSON(payload)
-  })
-end
-
--- Poll for commands from web server
-local function checkForCommands()
-  local response = http.get({
-    url = WEB_SERVER_URL .. "/commands",
-    headers = { ["X-API-Key"] = WEB_API_KEY }
-  })
-
-  if response then
-    local data = textutils.unserialiseJSON(response.readAll())
-    response.close()
-
-    if data and #data > 0 then
-      for _, cmd in ipairs(data) do
-        if cmd.type == "farm_override_on" then
-          sendCommand(cmd.farm, "override_on")
-        elseif cmd.type == "farm_override_off" then
-          sendCommand(cmd.farm, "override_off")
-        elseif cmd.type == "farm_clear_override" then
-          sendCommand(cmd.farm, "clear_override")
-        elseif cmd.type == "shutdown_all" then
-          for farm, _ in pairs(FARM_IDS) do
-            sendCommand(farm, "override_off")
-          end
-        elseif cmd.type == "resume_all" then
-          for farm, _ in pairs(FARM_IDS) do
-            sendCommand(farm, "clear_override")
-          end
-        elseif cmd.type == "shutdown_priority" then
-          for farm, priority in pairs(FARM_PRIORITIES) do
-            if priority >= cmd.tier then
-              sendCommand(farm, "override_off")
-            end
-          end
-        end
-      end
-    end
-  end
-end
-```
-
-**Call both functions in the main loop every update cycle.**
+**Web-bridge contract** (full implementation: `central.lua` and the command-handling
+loop in `CABIN_Lua_Reference.md`):
+- `central.lua` POSTs the payload above to `POST /update` (`X-API-Key` header) every
+  2-3s and GETs `GET /commands` each cycle, dispatching queued commands to farm
+  computers over rednet.
+- Priority/farm-id lookups are built **dynamically from `farms.json`** (not hardcoded
+  tables) — see the "central.lua Changes After Abstraction" section of the Lua Reference.
+- Command types handled: `farm_override_on`, `farm_override_off`,
+  `farm_clear_override`, `shutdown_all`, `resume_all`, `shutdown_priority`.
 
 ### 1.2 CC:Tweaked Server Config Requirement
 
@@ -191,6 +109,7 @@ HTTP must be enabled in CABIN's server config at `serverconfig/computercraft-ser
 | POST | /auth/login | None | Dashboard login |
 | POST | /auth/logout | Session | Dashboard logout |
 | GET | /api/status | Session | Current state snapshot |
+| GET | /api/farms-config | Session | Serve `minecraft/farms.json` — farm definitions, wings, priority labels |
 | GET | / | Session | Serve Vue dashboard |
 | WS | /ws | Session | Real time WebSocket feed — same port as HTTP, session cookie validated during the upgrade handshake |
 
@@ -337,6 +256,25 @@ app.get('/api/status', requireAuth, (req, res) => {
   res.json(latestState || {})
 })
 
+// Farm config — single source of truth, read from the repo (minecraft/farms.json).
+// Loaded once at startup; `pm2 restart` after a git pull picks up changes.
+let farmsConfig = null
+function loadFarmsConfig() {
+  try {
+    const p = path.join(__dirname, '../../minecraft/farms.json')
+    farmsConfig = JSON.parse(require('fs').readFileSync(p, 'utf8'))
+    console.log('Loaded farms config:', farmsConfig.farms.length, 'farms')
+  } catch (err) {
+    console.error('Could not load farms.json:', err.message)
+  }
+}
+loadFarmsConfig()
+
+app.get('/api/farms-config', requireAuth, (req, res) => {
+  if (!farmsConfig) return res.status(500).json({ error: 'farms.json not loaded' })
+  res.json(farmsConfig)
+})
+
 // Serve Vue dashboard — the Vite build outputs to monitor/server/public
 const clientDir = path.join(__dirname, 'public')
 app.use(express.static(clientDir))
@@ -450,22 +388,9 @@ function checkForAlerts(newState, oldState) {
     }
   }
 
-  // Train missing for 5+ minutes
-  for (const [train, status] of Object.entries(newState.trains || {})) {
-    if (status.lastSeen && Date.now() - status.lastSeen > 300000) {
-      const oldTrain = oldState.trains?.[train]
-      if (!oldTrain || Date.now() - oldTrain.lastSeen < 300000) {
-        sendPushNotification(
-          '🚂 Train Missing',
-          train + " hasn't been seen for 5 minutes.",
-          { type: 'train_missing', train },
-          [
-            { action: 'open_dashboard', title: 'View Dashboard' }
-          ]
-        )
-      }
-    }
-  }
+  // (Train-missing alert deferred to V2 — no train data source in V1.)
+  // Note: farm-offline above keys off the `online` boolean that central.lua
+  // maintains via its own report-timeout check — no timestamp math here.
 }
 
 const PORT = process.env.PORT || 3000
@@ -593,11 +518,6 @@ sudo ufw allow 3000
 │  🟠 sand      OVERRIDE  │
 │     [Clear Override]    │
 ├─────────────────────────┤
-│  🚂 TRAINS              │
-│  oil_tanker  IN TRANSIT │
-│  ore_train   LOADING    │
-│  supply      UNLOADING  │
-├─────────────────────────┤
 │  🔔 ALERTS              │
 │  ⚠ cobble vault full    │
 │  ℹ System startup       │
@@ -614,15 +534,14 @@ client/
 │   ├── App.vue                    # Root, WebSocket connection, auth gate
 │   ├── main.js                    # App entry point, Pinia setup
 │   ├── stores/
-│   │   ├── baseStore.js           # Farm status, power, trains, alerts state
+│   │   ├── baseStore.js           # Live status (farms, power, alerts) + farmsConfig from /api/farms-config
 │   │   └── authStore.js           # Authentication state
 │   ├── components/
 │   │   ├── LoginPage.vue          # Password entry
 │   │   ├── Header.vue             # Title, connection status, last update time
 │   │   ├── PowerCard.vue          # Power status, load bar, global controls
-│   │   ├── FarmGrid.vue           # All farms list
+│   │   ├── FarmGrid.vue           # Farms grouped by wing (from farmsConfig)
 │   │   ├── FarmCard.vue           # Individual farm with controls
-│   │   ├── TrainStatus.vue        # Train list with status badges
 │   │   ├── AlertFeed.vue          # Scrolling alert log
 │   │   ├── SettingsPanel.vue      # Notification preferences
 │   │   └── ConfirmModal.vue       # Safety confirmation for destructive actions
@@ -657,15 +576,20 @@ client/
   - "Shutdown All" — requires confirmation with typed "CONFIRM"
   - "Resume All" — confirms then POSTs `resume_all`
 
+**FarmGrid.vue**
+- Loads `farmsConfig` from `baseStore` (fetched once from `GET /api/farms-config`)
+- Groups farms by **wing** (`farmsConfig.wings`); within a wing, sorted by priority tier then by `label`
+- Each group is collapsible using a Vue transition
+- Passes the matching live status (`baseStore.farms[farm.id]`) into each `FarmCard`
+
 **FarmCard.vue**
-- Shows farm name, fill percentage, visual progress bar
+- Shows `farm.label` (from farmsConfig), fill percentage, visual progress bar
 - Status badge — RUNNING (green), PAUSED (red), OVERRIDE (orange), OFFLINE (gray)
+- Derives badge from live status (`fill`, `running`, `override`, `online`)
 - Control buttons:
   - "Pause" — confirms then POSTs `farm_override_off`
   - "Resume" — POSTs `farm_override_on`
   - "Clear Override" — POSTs `farm_clear_override` (only shown when overridden)
-- Sorted by priority tier then alphabetically via computed property
-- Collapsible by priority tier using Vue transition
 
 **ConfirmModal.vue**
 - Emits confirm/cancel events to parent
@@ -736,7 +660,6 @@ self.addEventListener('notificationclick', event => {
 | Power Restored | ✅ Power Restored | power.state returns to NORMAL | — |
 | Farm Offline | 🔴 Farm Offline | farm.online changes to false | Open Dashboard |
 | Vault Full | 📦 Vault Full | farm.fill >= 98% | — |
-| Train Missing | 🚂 Train Missing | train.lastSeen > 5 minutes ago | Open Dashboard |
 
 **Critical power notifications use `requireInteraction: true`** — they stay on screen until the user dismisses or acts on them. All other notifications auto-dismiss.
 
@@ -768,7 +691,6 @@ cabin-base/
 │       │   │   ├── PowerCard.vue
 │       │   │   ├── FarmGrid.vue
 │       │   │   ├── FarmCard.vue
-│       │   │   ├── TrainStatus.vue
 │       │   │   ├── AlertFeed.vue
 │       │   │   ├── SettingsPanel.vue
 │       │   │   └── ConfirmModal.vue
@@ -783,33 +705,22 @@ cabin-base/
 │       │   └── badge.png
 │       └── package.json
 └── minecraft/
-    ├── central.lua
-    ├── installer.lua
-    └── farms/
-        ├── wood.lua
-        ├── iron.lua
-        ├── andesite.lua
-        ├── cobble.lua
-        ├── gravel.lua
-        ├── sand.lua
-        ├── gold.lua
-        ├── copper.lua
-        ├── zinc.lua
-        ├── granite.lua
-        ├── concrete.lua
-        ├── brass.lua
-        ├── mechanism.lua
-        ├── chapter_1.lua
-        ├── chapter_2.lua
-        ├── chapter_3.lua
-        ├── chapter_4.lua
-        └── chapter_5.lua
+    ├── farms.json          # Single source of truth — every farm, wing, priority
+    ├── central.lua         # Full rednet aggregator + web bridge (built fresh)
+    ├── universal_farm.lua  # One script every farm computer runs (reads farms.json by ID)
+    └── installer.lua       # Simplified — downloads universal_farm.lua, prints computer ID
 ```
 
-**CC:Tweaked wget from monorepo:**
+> Adopting the `farms.json` / `universal_farm.lua` model **from the start** (per the
+> user's scope decision) — there are no per-farm `.lua` files or per-computer
+> `config.lua`. See `CABIN_Lua_Reference.md` → "Farm Abstraction Layer" for the full
+> scripts and field reference.
+
+**CC:Tweaked wget from monorepo** (replace `<OWNER>/<REPO>`/branch with the real
+GitHub path — see open question below):
 ```
-wget https://raw.githubusercontent.com/yourusername/cabin-base/main/minecraft/farms/wood.lua startup.lua
-wget https://raw.githubusercontent.com/yourusername/cabin-base/main/minecraft/installer.lua installer.lua
+wget https://raw.githubusercontent.com/<OWNER>/<REPO>/main/minecraft/installer.lua installer.lua
+# installer downloads universal_farm.lua (farms) or central.lua (control computer)
 ```
 
 **.gitignore:**
@@ -836,9 +747,9 @@ monitor/server/public/assets/
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
-# 2. Clone repo
-git clone https://github.com/yourusername/cabin-base
-cd cabin-base
+# 2. Clone repo (provides minecraft/farms.json that the server reads)
+git clone https://github.com/<OWNER>/<REPO>
+cd <REPO>
 
 # 3. Install server dependencies
 cd monitor/server && npm install
@@ -850,7 +761,7 @@ node -e "const wp = require('web-push'); const keys = wp.generateVAPIDKeys(); co
 cp .env.example .env
 # Edit .env with your values
 
-# 6. Build React client
+# 6. Build Vue client (Vite outputs into monitor/server/public)
 cd ../client && npm install && npm run build
 
 # 7. Start with PM2
@@ -872,9 +783,9 @@ sudo ufw allow 3000
 
 ### Updating
 ```bash
-git pull
+git pull                                  # also picks up minecraft/farms.json edits
 cd monitor/client && npm run build
-pm2 restart cabin-monitor
+pm2 restart cabin-monitor                 # reloads farms.json (read at startup)
 ```
 
 ---
@@ -883,8 +794,8 @@ pm2 restart cabin-monitor
 
 - Real time farm status dashboard
 - Power monitoring and status
-- Train status display
 - Alert feed
+- Farm config via `farms.json` single source of truth (wing grouping, dynamic priorities) — server, dashboard and `central.lua` all read it
 - Remote farm control (pause/resume/override)
 - Global controls (shutdown all, shutdown by priority, resume all)
 - Push notifications for all alert types
@@ -897,8 +808,9 @@ pm2 restart cabin-monitor
 
 ## V2 Ideas (Future)
 
-- **Historical graphs** — SQLite to store state history, production graphs over 24 hours
+- **Train monitoring** — status display + "train missing" alerts. Deferred from V1: there is currently **no Minecraft-side data source** for trains (`central.lua` declares `trainStatus` but never populates it). Needs a design — likely a station/observer computer reporting train state via rednet.
 - **Train map** — visual route map showing train positions
+- **Historical graphs** — SQLite to store state history, production graphs over 24 hours
 - **Production rate tracking** — track items per minute per farm over time
 - **Scheduled commands** — set a farm to shut down at a specific time
 - **HTTPS** — Let's Encrypt free SSL cert
@@ -910,17 +822,21 @@ pm2 restart cabin-monitor
 
 1. Verify `textutils.serializeJSON` and `textutils.unserialiseJSON` are available in the CC:Tweaked version bundled with CABIN
 2. Confirm CC:Tweaked HTTP API supports custom headers for API key auth
-3. Check if CORS needs to be configured for WebSocket connection from browser to Digital Ocean
+3. ~~CORS for WebSocket~~ — **resolved:** WS shares the HTTP origin/port and is session-cookie gated, so CORS is not involved
 4. Confirm PM2 or suggest alternative process manager given existing server setup
 5. Verify web-push library is compatible with Node.js 20
+6. **OPEN — needed for Milestone 6:** the real GitHub `<OWNER>/<REPO>` and default branch, for `installer.lua` / `wget` raw URLs
 
 ---
 
 ## Notes for Claude Code
 
 - **Client is Vue 3 with Composition API and Pinia — not React.** Use `.vue` single file components throughout. Composables replace React hooks.
-- The CC:Tweaked central.lua already exists and aggregates all farm data — only additions are needed, not a rewrite
-- Farm priority tiers are defined in central.lua as `FARM_PRIORITIES` table — server and dashboard should use the same tier numbering (1=critical, 2=high, 3=medium, 4=low)
+- `central.lua` is **built fresh** from `CABIN_Lua_Reference.md` (full rednet aggregator + monitor display + web bridge) — it does **not** pre-exist; it is not a "small addition"
+- `farms.json` is adopted **from the start** as the single source of truth — farm computers run one `universal_farm.lua` (no per-farm scripts, no per-computer `config.lua`)
+- Farm priority tiers (1=critical, 2=high, 3=medium, 4=low) live in `farms.json`. `central.lua` loads it dynamically; the server serves it via `/api/farms-config`; the dashboard reads it from there. No hardcoded farm/priority tables anywhere
+- **Trains are deferred to V2** — no `TrainStatus.vue`, no train push notifications, no train data source in V1. The server may receive a `trains` field but nothing consumes it
+- Server-side alerting trusts `central.lua`'s `online` boolean and emitted alerts; it does **not** do timestamp math (CC `os.clock`/`os.epoch` values are not wall-clock-comparable)
 - The dashboard is primarily used on a phone so mobile UX is the priority — desktop is secondary
 - Destructive actions (shutdown all, shutdown farm) must have confirmation dialogs to prevent accidental taps
 - Critical power notifications should use `requireInteraction: true` so they stay on screen
@@ -984,16 +900,17 @@ Each milestone is a self-contained unit of work for a single Claude Code session
 **Goal:** Real time farm status, power status and alerts visible. Read only, no controls yet.
 
 **Scope:**
-- Create `baseStore.js` — stores farms, power, trains, alerts from WebSocket messages
+- Author `minecraft/farms.json` (all farms, wings, priority labels — schema in `CABIN_Lua_Reference.md`)
+- Server: add `/api/farms-config` endpoint (reads `minecraft/farms.json`, session auth)
+- Create `baseStore.js` — live status (farms, power, alerts) from WebSocket messages **plus** `farmsConfig` loaded once from `/api/farms-config`
 - Create `Header.vue` — title, connection status indicator, time since last update
 - Create `PowerCard.vue` — power state badge, load percentage bar, generation and consumption numbers, color coded. No buttons yet.
-- Create `FarmGrid.vue` — renders FarmCard list sorted by priority then name
-- Create `FarmCard.vue` — farm name, fill percentage, visual progress bar, status badge. No buttons yet.
-- Create `TrainStatus.vue` — list of trains with status badge and last seen time
+- Create `FarmGrid.vue` — farms grouped by **wing** (from `farmsConfig`), sorted by priority then `label`
+- Create `FarmCard.vue` — `farm.label`, fill percentage, visual progress bar, status badge derived from live status. No buttons yet.
 - Create `AlertFeed.vue` — scrolling list of last 5 alerts, color coded by severity
-- Wire everything into `App.vue`
+- Wire everything into `App.vue` (no train UI — deferred to V2)
 
-**Done when:** Dashboard shows live updating farm statuses, power state and alerts when the server receives POST updates. Looks good on a phone screen.
+**Done when:** Dashboard loads `farmsConfig`, shows live updating farm statuses grouped by wing, power state and alerts when the server receives POST updates. Looks good on a phone screen.
 
 **Commit:** `feat: dashboard core display with real time farm and power status`
 
@@ -1028,7 +945,7 @@ Each milestone is a self-contained unit of work for a single Claude Code session
 - Server: configure web-push with VAPID keys
 - Server: implement `/push/subscribe` POST and DELETE endpoints
 - Server: implement `sendPushNotification` function
-- Server: implement `checkForAlerts` comparing new vs previous state — triggers on power state changes, farm going offline, vault 98%+ full, train missing 5+ minutes
+- Server: implement `checkForAlerts` comparing new vs previous state — triggers on power state changes, farm `online` flipping to false, vault 98%+ full (no timestamp math; no train alerts — deferred to V2)
 - Wire `checkForAlerts` into `/update` handler
 
 **Done when:** Accepting notifications in browser, changing power state in a test POST triggers a push notification on device. Critical power notification stays on screen until dismissed. Tapping Shutdown Low Priority on notification sends command without opening dashboard.
@@ -1038,15 +955,18 @@ Each milestone is a self-contained unit of work for a single Claude Code session
 ---
 
 ### Milestone 6 — CC:Tweaked Integration
-**Goal:** Lua scripts that report to the server and poll for commands. Installer for easy deployment.
+**Goal:** Build the Lua control plane fresh (per `CABIN_Lua_Reference.md`), driven by `farms.json`.
 
 **Scope:**
-- Update `minecraft/central.lua` — add `postToWebServer()`, add `checkForCommands()`, call both in main loop
-- Update all farm `.lua` files to load config from `config.lua` so installer-generated config works
-- Create `minecraft/installer.lua` — interactive menu, downloads correct script from GitHub raw URL, saves config.lua, names script startup.lua
-- Document CC:Tweaked server config requirement
+- Create `minecraft/central.lua` **from scratch** per the Lua Reference: rednet listener for farm reports, power monitoring (Create stressometer), report-timeout → `online` flag, monitor display, `postToWebServer()` + `checkForWebCommands()`, `parallel.waitForAll(mainLoop, listenForFarmReports)`. Builds `FARM_PRIORITIES`/`FARM_IDS`/`ID_TO_FARM` **dynamically from `farms.json`** (not hardcoded)
+- Create `minecraft/universal_farm.lua` — the single script every farm computer runs; fetches `farms.json` from GitHub, finds its own entry by `os.getComputerID()`, runs vault/redstone/rednet loop with offline cache fallback
+- Create `minecraft/installer.lua` — simplified: downloads `universal_farm.lua` (or `central.lua`) as `startup.lua`, prints the computer ID to add to `farms.json`
+- Confirm `minecraft/farms.json` (authored in Milestone 3) has real `computer_id`s and `central_computer_id`
+- Document the CC:Tweaked `computercraft-server.toml` HTTP allow rule
 
-**Done when:** Farm computer runs installer, selects farm type, enters config values, reboots — farm status appears live on dashboard within 5 seconds. Sending pause command from dashboard reaches CC:Tweaked within one poll cycle.
+**Requires:** the real GitHub `<OWNER>/<REPO>`/branch (open question #6) baked into the raw URLs.
+
+**Done when:** A farm computer runs the installer, its ID is added to `farms.json` and pushed, it reboots — farm status appears live on the dashboard (in the right wing) within ~5 seconds. A pause command from the dashboard reaches the farm via central within one poll cycle.
 
 **Commit:** `feat: CC:Tweaked Lua scripts with web reporting and command polling`
 
@@ -1075,12 +995,12 @@ Each milestone is a self-contained unit of work for a single Claude Code session
 
 | Milestone | Status | Branch | Notes |
 |-----------|--------|--------|-------|
-| 1 — Server Skeleton | 🟡 Built — awaiting review/commit | `feat/m1-server-skeleton` | Session-gated WS on single port; `/command` stubbed |
-| 2 — Vue Client Scaffold | 🟡 Built — awaiting review/commit | `feat/m2-client-scafold` | Manual scaffold (no interactive `create-vite`); WS deferred to baseStore in M3 |
-| 3 — Dashboard Display | ⬜ Todo | `feat/m3-dashboard-display` | |
+| 1 — Server Skeleton | ✅ Committed | `feat/m1-server-skeleton` | Session-gated WS on single port; `/command` stubbed |
+| 2 — Vue Client Scaffold | ✅ Committed | `feat/m2-client-scafold` | Manual scaffold; WS wired to baseStore in M3 |
+| 3 — Dashboard Display | ⬜ Todo | `feat/m3-dashboard-display` | **Scope expanded:** now authors `farms.json`, adds `/api/farms-config`, wing-grouped FarmGrid, no train UI |
 | 4 — Farm Controls | ⬜ Todo | `feat/m4-farm-controls` | |
-| 5 — Push Notifications | ⬜ Todo | `feat/m5-push-notifications` | |
-| 6 — CC:Tweaked Integration | ⬜ Todo | `feat/m6-cctweaked` | |
+| 5 — Push Notifications | ⬜ Todo | `feat/m5-push-notifications` | Train Missing alert dropped (V2) |
+| 6 — CC:Tweaked Integration | ⬜ Todo | `feat/m6-cctweaked` | **Scope expanded:** build `central.lua` fresh + `universal_farm.lua` + `farms.json`-driven; needs GitHub repo path |
 | 7 — Polish and Deployment | ⬜ Todo | `feat/m7-deployment` | |
 
 ---
@@ -1091,15 +1011,20 @@ Paste this at the start of each new session, replacing N with the milestone numb
 
 ```
 I'm building the CABIN Base Monitor — a web dashboard for monitoring a Minecraft base.
-The full TRD is in CABIN_Base_Monitor_TRD.md in the repo root. Please read it first.
+Read both docs in /docs/ first: CABIN_Base_Monitor_TRD.md (this file) and
+CABIN_Lua_Reference.md (source of truth for the Minecraft/Lua side).
 
 Implement Milestone N only. Do not implement anything outside that milestone's scope.
 
-Key constraints:
+Key constraints / locked scope decisions:
 - Vue 3 Composition API with Pinia — not React
-- Node.js + Express + ws for the server
-- Monorepo: cabin-base/monitor/server and cabin-base/monitor/client
+- Node.js + Express + ws for the server; WS shares the HTTP port, session-gated
+- Monorepo: monitor/server, monitor/client, minecraft/
 - Mobile first design with Tailwind CSS
+- farms.json is the single source of truth, adopted from the start
+- central.lua is built fresh (full aggregator); farms run one universal_farm.lua
+- Trains are deferred to V2 — no train UI or alerts in V1
+- Server-side alerting trusts central's `online` flag, not timestamp math
 
 Repo: [your local repo path]
 ```
