@@ -1,11 +1,14 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useBaseStore } from '@/stores/baseStore'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 
 // `farm` is a farms.json entry merged with a `.status` field (live or null).
 const props = defineProps({
   farm: { type: Object, required: true }
 })
 
+const base = useBaseStore()
 const status = computed(() => props.farm.status)
 
 const badge = computed(() => {
@@ -17,6 +20,7 @@ const badge = computed(() => {
 })
 
 const offline = computed(() => !status.value || status.value.online === false)
+const overridden = computed(() => !!status.value?.override)
 const fill = computed(() =>
   typeof status.value?.fill === 'number' ? status.value.fill : null
 )
@@ -27,6 +31,23 @@ const barColor = computed(() => {
   if (fill.value >= 60) return 'bg-amber-500'
   return 'bg-emerald-500'
 })
+
+// Pause needs confirmation; Resume / Clear Override are immediate.
+const confirmPause = ref(false)
+
+function resume() {
+  base.sendCommand({ type: 'farm_override_on', farm: props.farm.id })
+}
+function clearOverride() {
+  base.sendCommand({ type: 'farm_clear_override', farm: props.farm.id })
+}
+function doPause() {
+  confirmPause.value = false
+  base.sendCommand({ type: 'farm_override_off', farm: props.farm.id })
+}
+
+const btn =
+  'flex-1 text-xs py-1.5 rounded-lg border border-base-line active:bg-base-card disabled:opacity-40'
 </script>
 
 <template>
@@ -56,5 +77,28 @@ const barColor = computed(() => {
         {{ fill === null ? '—' : fill + '%' }}
       </span>
     </div>
+
+    <div class="mt-2.5 flex gap-2">
+      <button :class="btn" :disabled="offline" @click="confirmPause = true">Pause</button>
+      <button :class="btn" :disabled="offline" @click="resume">Resume</button>
+      <button
+        v-if="overridden"
+        :class="btn"
+        :disabled="offline"
+        @click="clearOverride"
+      >
+        Clear Override
+      </button>
+    </div>
+
+    <ConfirmModal
+      v-if="confirmPause"
+      :title="`Pause ${farm.label}?`"
+      body="Force-stops this farm (override OFF) until you clear the override."
+      confirm-label="Pause"
+      danger
+      @confirm="doPause"
+      @cancel="confirmPause = false"
+    />
   </div>
 </template>
