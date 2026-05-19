@@ -5,7 +5,7 @@ import { useBaseStore } from '@/stores/baseStore'
 const props = defineProps({
   wsStatus: { type: String, default: 'connecting' }
 })
-defineEmits(['logout'])
+defineEmits(['logout', 'open-settings'])
 
 const base = useBaseStore()
 
@@ -41,12 +41,22 @@ const ago = computed(() => {
         <span class="text-gray-500">· {{ ago }}</span>
       </p>
     </div>
-    <button
-      class="text-xs text-gray-400 active:text-gray-200 border border-base-line
-             rounded-lg px-3 py-1.5"
-      @click="$emit('logout')"
-    >
-      Log out
-    </button>
+    <div class="flex items-center gap-2">
+      <button
+        class="text-base border border-base-line rounded-lg px-2.5 py-1.5
+               active:bg-base-card"
+        aria-label="Notification settings"
+        @click="$emit('open-settings')"
+      >
+        ⚙️
+      </button>
+      <button
+        class="text-xs text-gray-400 active:text-gray-200 border border-base-line
+               rounded-lg px-3 py-1.5"
+        @click="$emit('logout')"
+      >
+        Log out
+      </button>
+    </div>
   </header>
 </template>

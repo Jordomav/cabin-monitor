@@ -9,6 +9,7 @@ import AppHeader from '@/components/Header.vue'
 import PowerCard from '@/components/PowerCard.vue'
 import FarmGrid from '@/components/FarmGrid.vue'
 import AlertFeed from '@/components/AlertFeed.vue'
+import SettingsPanel from '@/components/SettingsPanel.vue'
 
 const auth = useAuthStore()
 const base = useBaseStore()
@@ -17,6 +18,7 @@ const { authenticated, checking } = storeToRefs(auth)
 // WS is only started once authenticated (server gates the upgrade on the
 // session cookie). Messages feed straight into baseStore.
 const wsStatus = ref('connecting')
+const showSettings = ref(false)
 let socket = null
 
 function startSocket() {
@@ -50,11 +52,17 @@ onMounted(auth.checkSession)
   <LoginPage v-else-if="!authenticated" />
 
   <div v-else class="min-h-screen pb-10">
-    <AppHeader :ws-status="wsStatus" @logout="auth.logout" />
+    <AppHeader
+      :ws-status="wsStatus"
+      @logout="auth.logout"
+      @open-settings="showSettings = true"
+    />
     <main class="max-w-md mx-auto px-3 pt-3 space-y-3">
       <PowerCard />
       <FarmGrid />
       <AlertFeed />
     </main>
+
+    <SettingsPanel v-if="showSettings" @close="showSettings = false" />
   </div>
 </template>
