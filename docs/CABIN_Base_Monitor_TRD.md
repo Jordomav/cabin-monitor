@@ -996,7 +996,7 @@ Each milestone is a self-contained unit of work for a single Claude Code session
 | 1 — Server Skeleton | ✅ Committed | `feat/m1-server-skeleton` | Session-gated WS on single port; `/command` stubbed |
 | 2 — Vue Client Scaffold | ✅ Committed | `feat/m2-client-scafold` | Manual scaffold; WS wired to baseStore in M3 |
 | 3 — Dashboard Display | ✅ Todo | `feat/m3-dashboard-display` | **Scope expanded:** now authors `farms.json`, adds `/api/farms-config`, wing-grouped FarmGrid, no train UI |
-| 4 — Farm Controls | ⬜ Todo | `feat/m4-farm-controls` | |
+| 4 — Farm Controls | ✅ Todo | `feat/m4-farm-controls` | |
 | 5 — Push Notifications | ⬜ Todo | `feat/m5-push-notifications` | Train Missing alert dropped (V2) |
 | 6 — CC:Tweaked Integration | ⬜ Todo | `feat/m6-cctweaked` | **Scope expanded:** build `central.lua` fresh + `universal_farm.lua` + `farms.json`-driven; needs GitHub repo path |
 | 7 — Polish and Deployment | ⬜ Todo | `feat/m7-deployment` | |
