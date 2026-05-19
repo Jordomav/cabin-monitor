@@ -79,16 +79,28 @@ app.get('/commands', requireApiKey, (req, res) => {
   res.json(commands)
 })
 
-// Command queue endpoint — full validation lands in Milestone 4. Stubbed here
-// so the queue round-trips end to end for the skeleton.
+// Command queue endpoint — dashboard → queue → CC:Tweaked polls /commands.
+const FARM_COMMANDS = ['farm_override_on', 'farm_override_off', 'farm_clear_override']
+const VALID_COMMANDS = [...FARM_COMMANDS, 'shutdown_all', 'resume_all', 'shutdown_priority']
+
 app.post('/command', requireAuth, (req, res) => {
   const { type, farm, tier } = req.body
-  if (!type) return res.status(400).json({ error: 'Missing command type' })
+
+  if (!VALID_COMMANDS.includes(type)) {
+    return res.status(400).json({ error: 'Invalid command type' })
+  }
+  if (FARM_COMMANDS.includes(type) && !farm) {
+    return res.status(400).json({ error: 'farm is required for this command' })
+  }
+  if (type === 'shutdown_priority' && !(Number.isInteger(tier) && tier >= 1 && tier <= 4)) {
+    return res.status(400).json({ error: 'tier must be an integer 1–4' })
+  }
+
   pendingCommands.push({
     id: Date.now(),
     type,
-    farm: farm || null,
-    tier: tier || null,
+    farm: FARM_COMMANDS.includes(type) ? farm : null,
+    tier: type === 'shutdown_priority' ? tier : null,
     timestamp: Date.now()
   })
   res.json({ ok: true })

@@ -58,6 +58,45 @@ export const useBaseStore = defineStore('base', () => {
   const recentAlerts = computed(() => alerts.value.slice(0, 5))
   const hasData = computed(() => receivedAt.value !== null)
 
+  // --- Remote control ------------------------------------------------------
+  const commandError = ref('')
+
+  // Reflect a command in local state immediately, before the next /update
+  // arrives. The server remains the source of truth — the next broadcast
+  // (~3s) reconciles anything central decided differently.
+  function applyOptimisticCommand(p) {
+    const next = { ...farmStatus.value }
+    const patch = (id, fields) => {
+      const cur = next[id] || { fill: 0, running: true, override: false, online: true }
+      next[id] = { ...cur, ...fields }
+    }
+    const cfgFarms = farmsConfig.value?.farms || []
+
+    if (p.farm && p.type === 'farm_override_on') patch(p.farm, { override: true, running: true })
+    else if (p.farm && p.type === 'farm_override_off') patch(p.farm, { override: true, running: false })
+    else if (p.farm && p.type === 'farm_clear_override') patch(p.farm, { override: false })
+    else if (p.type === 'shutdown_all')
+      Object.keys(next).forEach((id) => patch(id, { override: true, running: false }))
+    else if (p.type === 'resume_all')
+      Object.keys(next).forEach((id) => patch(id, { override: false }))
+    else if (p.type === 'shutdown_priority')
+      cfgFarms
+        .filter((f) => f.priority >= p.tier)
+        .forEach((f) => patch(f.id, { override: true, running: false }))
+
+    farmStatus.value = next
+  }
+
+  async function sendCommand(payload) {
+    applyOptimisticCommand(payload)
+    try {
+      await api.post('/command', payload)
+      commandError.value = ''
+    } catch (err) {
+      commandError.value = err.message || 'Command failed'
+    }
+  }
+
   return {
     power,
     farmStatus,
@@ -69,8 +108,10 @@ export const useBaseStore = defineStore('base', () => {
     wings,
     recentAlerts,
     hasData,
+    commandError,
     applyMessage,
     loadFarmsConfig,
-    farmsInWing
+    farmsInWing,
+    sendCommand
   }
 })

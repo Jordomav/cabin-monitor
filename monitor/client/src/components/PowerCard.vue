@@ -1,9 +1,52 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useBaseStore } from '@/stores/baseStore'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 
 const base = useBaseStore()
 const power = computed(() => base.power)
+
+// One modal, driven by a pending-action descriptor.
+const pending = ref(null)
+const ask = (action) => (pending.value = action)
+function onConfirm() {
+  const a = pending.value
+  pending.value = null
+  if (a) base.sendCommand(a.payload)
+}
+
+const GLOBAL_ACTIONS = [
+  {
+    label: 'Shutdown Low',
+    title: 'Shut down low-priority farms?',
+    body: 'Pauses all tier-4 (Low) farms.',
+    confirmLabel: 'Shutdown Low',
+    payload: { type: 'shutdown_priority', tier: 4 }
+  },
+  {
+    label: 'Shutdown Med+',
+    title: 'Shut down medium and lower farms?',
+    body: 'Pauses all tier-3 (Medium) and below farms.',
+    confirmLabel: 'Shutdown Med+',
+    payload: { type: 'shutdown_priority', tier: 3 }
+  },
+  {
+    label: 'Resume All',
+    title: 'Resume all farms?',
+    body: 'Clears overrides on every farm — automatic control resumes.',
+    confirmLabel: 'Resume All',
+    payload: { type: 'resume_all' }
+  },
+  {
+    label: 'Shutdown All',
+    title: 'Shut down EVERY farm?',
+    body: 'Force-stops all farms including critical ones. Type CONFIRM.',
+    confirmLabel: 'Shutdown All',
+    requireText: 'CONFIRM',
+    danger: true,
+    payload: { type: 'shutdown_all' }
+  }
+]
 
 // NORMAL / WARNING / CRITICAL — colour the whole card by state.
 const theme = computed(() => {
@@ -66,5 +109,29 @@ const fmt = (n) => (typeof n === 'number' ? n.toLocaleString() : '—')
     </template>
 
     <p v-else class="text-sm text-gray-500 mt-3">Awaiting first report…</p>
+
+    <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-base-line">
+      <button
+        v-for="a in GLOBAL_ACTIONS"
+        :key="a.label"
+        class="text-xs py-2 rounded-lg border border-base-line active:bg-base-bg"
+        :class="a.danger ? 'text-red-400 border-red-500/40' : 'text-gray-300'"
+        @click="ask(a)"
+      >
+        {{ a.label }}
+      </button>
+    </div>
+
+    <ConfirmModal
+      v-if="pending"
+      :title="pending.title"
+      :body="pending.body"
+      :confirm-label="pending.confirmLabel"
+      :require-text="pending.requireText || null"
+      :danger="!!pending.danger"
+      @confirm="onConfirm"
+      @cancel="pending = null"
+    />
   </section>
 </template>
+
