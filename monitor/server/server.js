@@ -1,7 +1,6 @@
-// CABIN Base Monitor — server skeleton (Milestone 1)
-// Scope: state ingest (/update), command queue (/commands, /command stub),
-// session auth, status snapshot, placeholder static page, authenticated WebSocket.
-// Push notifications and alert detection arrive in Milestone 5.
+// CABIN Base Monitor — server
+// state ingest (/update), command queue, session auth, WebSocket, farms config,
+// and Web Push notifications + alert detection (Milestone 5).
 
 require('dotenv').config()
 const http = require('http')
@@ -10,6 +9,21 @@ const fs = require('fs')
 const express = require('express')
 const session = require('express-session')
 const { WebSocketServer, WebSocket } = require('ws')
+const webpush = require('web-push')
+
+// VAPID is optional — without keys the server still runs, push is just disabled.
+const PUSH_ENABLED = Boolean(
+  process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY
+)
+if (PUSH_ENABLED) {
+  webpush.setVapidDetails(
+    'mailto:' + (process.env.VAPID_EMAIL || 'admin@example.com'),
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  )
+} else {
+  console.warn('VAPID keys not set — push notifications disabled')
+}
 
 const app = express()
 app.use(express.json({ limit: '256kb' }))
@@ -29,6 +43,8 @@ let latestState = null
 let previousState = null
 const pendingCommands = []
 const wsClients = new Set()
+// Each entry: { subscription, prefs } — prefs maps alert type -> boolean.
+const pushSubscriptions = []
 
 // --- Auth middleware -------------------------------------------------------
 const requireApiKey = (req, res, next) => {
@@ -69,7 +85,7 @@ app.post('/update', requireApiKey, (req, res) => {
     if (client.readyState === WebSocket.OPEN) client.send(message)
   })
 
-  // checkForAlerts(latestState, previousState) — implemented in Milestone 5
+  checkForAlerts(latestState, previousState)
   res.json({ ok: true })
 })
 
@@ -129,6 +145,144 @@ app.get('/api/farms-config', requireAuth, (req, res) => {
   if (!farmsConfig) return res.status(500).json({ error: 'farms.json not loaded' })
   res.json(farmsConfig)
 })
+
+// --- Web Push --------------------------------------------------------------
+// Client needs the public key to build a subscription.
+app.get('/push/public-key', requireAuth, (req, res) => {
+  res.json({ key: process.env.VAPID_PUBLIC_KEY || null, enabled: PUSH_ENABLED })
+})
+
+// Register or replace a subscription (keyed by endpoint). `prefs` is an
+// optional map of alertType -> boolean for per-device filtering.
+app.post('/push/subscribe', requireAuth, (req, res) => {
+  const { subscription, prefs } = req.body || {}
+  if (!subscription || !subscription.endpoint) {
+    return res.status(400).json({ error: 'subscription with endpoint required' })
+  }
+  const idx = pushSubscriptions.findIndex(
+    (s) => s.subscription.endpoint === subscription.endpoint
+  )
+  const entry = { subscription, prefs: prefs || {} }
+  if (idx > -1) pushSubscriptions[idx] = entry
+  else pushSubscriptions.push(entry)
+  console.log(
+    `[push] subscription ${idx > -1 ? 'updated' : 'registered'} — total ${pushSubscriptions.length}`
+  )
+  res.json({ ok: true })
+})
+
+app.delete('/push/subscribe', requireAuth, (req, res) => {
+  const endpoint = req.body && req.body.endpoint
+  const idx = pushSubscriptions.findIndex(
+    (s) => s.subscription.endpoint === endpoint
+  )
+  if (idx > -1) pushSubscriptions.splice(idx, 1)
+  res.json({ ok: true })
+})
+
+// Send to every subscription that hasn't disabled this alert type.
+// Prunes subscriptions the push service reports as gone (404/410).
+async function sendPushNotification(type, title, body, data = {}, actions = []) {
+  if (!PUSH_ENABLED) return
+  const payload = JSON.stringify({
+    title,
+    body,
+    icon: '/icon.png',
+    badge: '/badge.png',
+    data: { ...data, type },
+    actions
+  })
+  let sent = 0
+  let skipped = 0
+  for (let i = pushSubscriptions.length - 1; i >= 0; i--) {
+    const { subscription, prefs } = pushSubscriptions[i]
+    if (prefs && prefs[type] === false) {
+      skipped++
+      continue
+    }
+    try {
+      await webpush.sendNotification(subscription, payload)
+      sent++
+    } catch (err) {
+      console.error(`[push] send failed (${err.statusCode || '?'}): ${err.body || err.message}`)
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        pushSubscriptions.splice(i, 1)
+      }
+    }
+  }
+  console.log(
+    `[push] ${type} "${title}" — sent ${sent}, skipped ${skipped}, subs ${pushSubscriptions.length}`
+  )
+}
+
+// Friendly label from farms.json, falling back to the raw id.
+function farmLabel(id) {
+  const f = farmsConfig && farmsConfig.farms.find((x) => x.id === id)
+  return (f && f.label) || id
+}
+
+// Compare new vs previous state. No timestamp math — offline is driven by
+// central.lua's own `online` boolean. No train alerts (deferred to V2).
+function checkForAlerts(newState, oldState) {
+  if (!newState || !oldState) return
+
+  // Power state transitions
+  const ns = newState.power && newState.power.state
+  const os = oldState.power && oldState.power.state
+  if (ns && ns !== os) {
+    if (ns === 'CRITICAL') {
+      sendPushNotification(
+        'power',
+        '⚡ CRITICAL Power Alert',
+        'Base power critically strained.',
+        { state: 'critical' },
+        [
+          { action: 'shutdown_low', title: 'Shutdown Low Priority' },
+          { action: 'open_dashboard', title: 'Open Dashboard' }
+        ]
+      )
+    } else if (ns === 'WARNING') {
+      sendPushNotification(
+        'power',
+        '⚠️ Power Warning',
+        'Base power under strain.',
+        { state: 'warning' },
+        [{ action: 'open_dashboard', title: 'View Dashboard' }]
+      )
+    } else if (ns === 'NORMAL' && os) {
+      sendPushNotification('power', '✅ Power Restored', 'Base power back to normal.', {
+        state: 'normal'
+      })
+    }
+  }
+
+  const newFarms = newState.farms || {}
+  const oldFarms = oldState.farms || {}
+
+  // Farm went offline (online true -> false)
+  for (const [id, s] of Object.entries(newFarms)) {
+    const o = oldFarms[id]
+    if (o && o.online === true && s.online === false) {
+      sendPushNotification(
+        'farm_offline',
+        '🔴 Farm Offline',
+        farmLabel(id) + ' has gone offline unexpectedly.',
+        { farm: id },
+        [{ action: 'open_dashboard', title: 'View Dashboard' }]
+      )
+    }
+  }
+
+  // Vault crossed 98% full
+  for (const [id, s] of Object.entries(newFarms)) {
+    const o = oldFarms[id]
+    if (typeof s.fill === 'number' && s.fill >= 98 && (!o || o.fill < 98)) {
+      sendPushNotification('vault_full', '📦 Vault Full', farmLabel(id) + ' vault is full.', {
+        farm: id
+      })
+    }
+  }
+}
 
 // --- Static placeholder client --------------------------------------------
 const clientDir = path.join(__dirname, 'public')

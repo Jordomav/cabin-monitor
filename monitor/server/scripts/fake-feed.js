@@ -4,8 +4,12 @@
 //   node scripts/fake-feed.js once     # single payload then exit
 //
 // Posts to the running server's /update (same contract as central.lua).
-// Exercises every visual state: NORMAL/WARNING/CRITICAL power, and farms that
-// are running / paused / override / offline / vault-full.
+// Deterministically exercises every visual + notification state:
+//   - power cycles NORMAL/WARNING/CRITICAL
+//   - `granite` is permanently offline
+//   - `copper` cycles online -> OFFLINE every ~12 ticks (fires farm_offline)
+//   - `iron` fill jumps 55% -> 99% every ~12 ticks (fires vault_full)
+//   - `sand` overridden, `gravel` paused
 
 require('dotenv').config()
 const fs = require('fs')
@@ -19,8 +23,6 @@ const cfg = JSON.parse(
   fs.readFileSync(path.join(__dirname, '../../../minecraft/farms.json'), 'utf8')
 )
 
-// Deterministic-ish per-farm "personality" so it looks coherent across ticks.
-const offline = new Set(['granite'])
 const overridden = new Set(['sand'])
 const paused = new Set(['gravel'])
 
@@ -34,26 +36,40 @@ function buildPayload() {
     state === 'CRITICAL' ? 0.94 : state === 'WARNING' ? 0.81 : 0.55 + Math.random() * 0.15
   const generation = 50000
   const consumption = Math.round(generation * ratio)
+  const phase = tick % 12 // 12-tick (~36s) demo cycle
 
   const farms = {}
   for (const f of cfg.farms) {
-    if (offline.has(f.id)) {
+    if (f.id === 'granite') {
       farms[f.id] = { fill: 0, running: false, override: false, online: false }
-      continue
-    }
-    // fill drifts up and down a little each tick
-    const base = (f.id.length * 13 + tick * 7) % 100
-    const fill = f.id === 'cobble' ? 97 : Math.max(2, Math.min(99, base))
-    farms[f.id] = {
-      fill,
-      running: !paused.has(f.id),
-      override: overridden.has(f.id),
-      online: true
+    } else if (f.id === 'copper') {
+      // online ticks 0..7, offline 8..11 -> online->offline transition each cycle
+      const online = phase < 8
+      farms[f.id] = online
+        ? { fill: 40 + phase * 4, running: true, override: false, online: true }
+        : { fill: 0, running: false, override: false, online: false }
+    } else if (f.id === 'iron') {
+      // 55% for half the cycle, then 99% -> crosses the 98% vault threshold
+      farms[f.id] = {
+        fill: phase < 6 ? 55 : 99,
+        running: phase < 6,
+        override: false,
+        online: true
+      }
+    } else {
+      // generic drift, capped under 98 so only `iron` triggers vault_full
+      const base = (f.id.length * 13 + tick * 7) % 96
+      farms[f.id] = {
+        fill: f.id === 'cobble' ? 95 : Math.max(2, base),
+        running: !paused.has(f.id),
+        override: overridden.has(f.id),
+        online: true
+      }
     }
   }
 
   const alerts = [
-    { message: 'cobble vault nearly full', level: 'WARN', time: tick },
+    { message: 'iron vault filling', level: 'WARN', time: tick },
     { message: 'System startup', level: 'INFO', time: 0 }
   ]
   if (state === 'CRITICAL') {
@@ -71,10 +87,9 @@ async function send() {
       headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
       body: JSON.stringify(payload)
     })
+    const c = payload.farms.copper.online ? 'copper:on' : 'copper:OFF'
     console.log(
-      `tick ${tick}: ${res.status} — power ${payload.power.state} ${Math.round(
-        payload.power.ratio * 100
-      )}%`
+      `tick ${tick}: ${res.status} — power ${payload.power.state}, ${c}, iron ${payload.farms.iron.fill}%`
     )
   } catch (err) {
     console.error('post failed:', err.message, '(is the server running?)')
