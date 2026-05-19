@@ -1,4 +1,3 @@
-![dream_drift.png](../../kaijutsu/kaijutsu-game/public/characters/dream_drift.png)# Technical Requirements Document
 ## CABIN Base Monitor — Web Dashboard + Remote Control
 
 ### Overview
