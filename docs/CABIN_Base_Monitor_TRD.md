@@ -715,10 +715,9 @@ cabin-base/
 > `config.lua`. See `CABIN_Lua_Reference.md` → "Farm Abstraction Layer" for the full
 > scripts and field reference.
 
-**CC:Tweaked wget from monorepo** (replace `<OWNER>/<REPO>`/branch with the real
-GitHub path — see open question below):
+**CC:Tweaked wget from monorepo:**
 ```
-wget https://raw.githubusercontent.com/<OWNER>/<REPO>/main/minecraft/installer.lua installer.lua
+wget https://raw.githubusercontent.com/Jordomav/cabin-monitor/main/minecraft/installer.lua installer.lua
 # installer downloads universal_farm.lua (farms) or central.lua (control computer)
 ```
 
@@ -747,8 +746,8 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # 2. Clone repo (provides minecraft/farms.json that the server reads)
-git clone https://github.com/<OWNER>/<REPO>
-cd <REPO>
+git clone https://github.com/Jordomav/cabin-monitor
+cd cabin-monitor
 
 # 3. Install server dependencies
 cd monitor/server && npm install
@@ -824,7 +823,7 @@ pm2 restart cabin-monitor                 # reloads farms.json (read at startup)
 3. ~~CORS for WebSocket~~ — **resolved:** WS shares the HTTP origin/port and is session-cookie gated, so CORS is not involved
 4. Confirm PM2 or suggest alternative process manager given existing server setup
 5. Verify web-push library is compatible with Node.js 20
-6. **OPEN — needed for Milestone 6:** the real GitHub `<OWNER>/<REPO>` and default branch, for `installer.lua` / `wget` raw URLs
+6. ~~GitHub repo path for Milestone 6~~ — **resolved:** `Jordomav/cabin-monitor`, default branch `main`. Raw URL base: `https://raw.githubusercontent.com/Jordomav/cabin-monitor/main/minecraft/`
 
 ---
 
@@ -963,7 +962,7 @@ Each milestone is a self-contained unit of work for a single Claude Code session
 - Confirm `minecraft/farms.json` (authored in Milestone 3) has real `computer_id`s and `central_computer_id`
 - Document the CC:Tweaked `computercraft-server.toml` HTTP allow rule
 
-**Requires:** the real GitHub `<OWNER>/<REPO>`/branch (open question #6) baked into the raw URLs.
+**Requires:** raw URLs baked in as `https://raw.githubusercontent.com/Jordomav/cabin-monitor/main/minecraft/...` (repo confirmed: `Jordomav/cabin-monitor`, branch `main`).
 
 **Done when:** A farm computer runs the installer, its ID is added to `farms.json` and pushed, it reboots — farm status appears live on the dashboard (in the right wing) within ~5 seconds. A pause command from the dashboard reaches the farm via central within one poll cycle.
 
