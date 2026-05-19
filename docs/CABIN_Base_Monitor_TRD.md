@@ -1,4 +1,4 @@
-# Technical Requirements Document
+![dream_drift.png](../../kaijutsu/kaijutsu-game/public/characters/dream_drift.png)# Technical Requirements Document
 ## CABIN Base Monitor — Web Dashboard + Remote Control
 
 ### Overview
@@ -1076,7 +1076,7 @@ Each milestone is a self-contained unit of work for a single Claude Code session
 | Milestone | Status | Branch | Notes |
 |-----------|--------|--------|-------|
 | 1 — Server Skeleton | 🟡 Built — awaiting review/commit | `feat/m1-server-skeleton` | Session-gated WS on single port; `/command` stubbed |
-| 2 — Vue Client Scaffold | ⬜ Todo | `feat/m2-vue-scaffold` | |
+| 2 — Vue Client Scaffold | 🟡 Built — awaiting review/commit | `feat/m2-client-scafold` | Manual scaffold (no interactive `create-vite`); WS deferred to baseStore in M3 |
 | 3 — Dashboard Display | ⬜ Todo | `feat/m3-dashboard-display` | |
 | 4 — Farm Controls | ⬜ Todo | `feat/m4-farm-controls` | |
 | 5 — Push Notifications | ⬜ Todo | `feat/m5-push-notifications` | |
