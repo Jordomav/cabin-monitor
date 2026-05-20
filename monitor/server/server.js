@@ -74,6 +74,13 @@ app.post('/auth/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }))
 })
 
+// Temporary diagnostic: log every /update attempt (incl. auth failures).
+app.post('/update', (req, res, next) => {
+  const ok = req.headers['x-api-key'] === process.env.API_KEY
+  console.log(`[update] from ${req.ip} key=${ok ? 'OK' : 'BAD/MISSING'} bytes=${JSON.stringify(req.body || {}).length}`)
+  next()
+})
+
 // --- CC:Tweaked ingest -----------------------------------------------------
 app.post('/update', requireApiKey, (req, res) => {
   previousState = latestState

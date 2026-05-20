@@ -1,5 +1,5 @@
 {
-  "central_computer_id": 1,
+  "central_computer_id": 0,
   "priority_labels": {
     "1": "Critical",
     "2": "High",
@@ -17,7 +17,7 @@
   ],
   "farms": [
     { "id": "wood", "label": "Wood Farm", "computer_id": 2, "priority": 2, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "green", "report_interval": 5 },
-    { "id": "iron", "label": "Iron Farm", "computer_id": 3, "priority": 2, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "gray", "report_interval": 5 },
+    { "id": "iron", "label": "Iron Farm", "computer_id": 1, "priority": 2, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "back", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "gray", "report_interval": 5 },
     { "id": "andesite", "label": "Andesite Farm", "computer_id": 4, "priority": 2, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "lightGray", "report_interval": 5 },
     { "id": "brass", "label": "Brass Farm", "computer_id": 13, "priority": 2, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "yellow", "report_interval": 5 },
     { "id": "gold", "label": "Gold Farm", "computer_id": 8, "priority": 3, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "yellow", "report_interval": 5 },
