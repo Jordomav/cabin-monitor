@@ -13,8 +13,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: data.icon || '/icon.png',
-    badge: data.badge || '/badge.png',
+    icon: data.icon || '/icon-192.png',
+    badge: data.badge || '/icon-badge.png',
     data: data.data || {},
     actions: data.actions || [],
     // Critical power alerts stay on screen until the user acts on them.

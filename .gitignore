@@ -2,7 +2,9 @@ monitor/server/.env
 monitor/server/node_modules/
 monitor/client/node_modules/
 monitor/client/build/
-monitor/server/public/assets/
+# Vite build output — populated by `npm run build`, never committed.
+# Static asset sources live in monitor/client/public/ (tracked).
+monitor/server/public/
 .DS_Store
 *.log
 .idea/

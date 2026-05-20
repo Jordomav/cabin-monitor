@@ -10,6 +10,7 @@ const express = require('express')
 const session = require('express-session')
 const { WebSocketServer, WebSocket } = require('ws')
 const webpush = require('web-push')
+const rateLimit = require('express-rate-limit')
 
 // VAPID is optional — without keys the server still runs, push is just disabled.
 const PUSH_ENABLED = Boolean(
@@ -83,8 +84,18 @@ app.post('/update', (req, res, next) => {
   next()
 })
 
+// Rate-limit /update — central.lua posts every ~3s (= 20/min). 60/min/IP gives
+// 3× headroom and still rejects an obvious flood.
+const updateLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests' }
+})
+
 // --- CC:Tweaked ingest -----------------------------------------------------
-app.post('/update', requireApiKey, (req, res) => {
+app.post('/update', updateLimiter, requireApiKey, (req, res) => {
   previousState = latestState
   latestState = req.body
   latestState.receivedAt = Date.now()
@@ -193,8 +204,8 @@ async function sendPushNotification(type, title, body, data = {}, actions = []) 
   const payload = JSON.stringify({
     title,
     body,
-    icon: '/icon.png',
-    badge: '/badge.png',
+    icon: '/icon-192.png',
+    badge: '/icon-badge.png',
     data: { ...data, type },
     actions
   })
@@ -281,12 +292,29 @@ function checkForAlerts(newState, oldState) {
   }
 }
 
-// --- Static placeholder client --------------------------------------------
+// --- Static client (Vue build output) -------------------------------------
 const clientDir = path.join(__dirname, 'public')
 app.use(express.static(clientDir))
 app.get('*', (req, res) => {
   res.sendFile(path.join(clientDir, 'index.html'))
 })
+
+// Global error handler — keeps the server alive on bad payloads, malformed
+// JSON, or thrown handlers. Logs the cause; never exposes stacks to clients.
+// Must be last (4-arg signature is what marks it as an error handler).
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Invalid JSON body' })
+  }
+  console.error(`[server] ${req.method} ${req.path}:`, err.message)
+  if (res.headersSent) return next(err)
+  res.status(500).json({ error: 'Server error' })
+})
+
+// Last-resort crash guards — never let the process die from a stray async
+// rejection or thrown error somewhere outside an Express handler.
+process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err))
+process.on('uncaughtException', (err) => console.error('[uncaughtException]', err))
 
 // --- HTTP + WebSocket on a single port ------------------------------------
 const server = http.createServer(app)

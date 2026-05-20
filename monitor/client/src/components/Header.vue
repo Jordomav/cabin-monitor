@@ -19,9 +19,33 @@ onBeforeUnmount(() => clearInterval(timer))
 
 const live = computed(() => props.wsStatus === 'open')
 
+// Data is "stale" once it hasn't been refreshed within roughly the central
+// post interval + report timeout. Past 60s without a payload, treat it as
+// disconnected even if the WS still claims to be open.
+const ageSec = computed(() => {
+  if (!base.receivedAt) return null
+  return Math.max(0, Math.round((now.value - base.receivedAt) / 1000))
+})
+const freshness = computed(() => {
+  const s = ageSec.value
+  if (s === null) return 'none'
+  if (s < 10) return 'fresh'
+  if (s < 30) return 'stale'
+  return 'down'
+})
+const freshnessClass = computed(
+  () =>
+    ({
+      fresh: 'text-gray-500',
+      stale: 'text-amber-400',
+      down: 'text-red-400',
+      none: 'text-gray-500'
+    }[freshness.value])
+)
+
 const ago = computed(() => {
-  if (!base.receivedAt) return 'no data yet'
-  const s = Math.max(0, Math.round((now.value - base.receivedAt) / 1000))
+  const s = ageSec.value
+  if (s === null) return 'no data yet'
   if (s < 60) return `${s}s ago`
   return `${Math.floor(s / 60)}m ago`
 })
@@ -38,7 +62,13 @@ const ago = computed(() => {
         <span :class="live ? 'text-emerald-400' : 'text-amber-400'">
           {{ live ? '🟢 Live' : '🟠 ' + wsStatus }}
         </span>
-        <span class="text-gray-500">· {{ ago }}</span>
+        <span :class="freshnessClass">· {{ ago }}</span>
+        <span
+          v-if="freshness === 'down'"
+          class="ml-1 text-[10px] font-semibold text-red-300 bg-red-900/40 px-1.5 py-0.5 rounded"
+        >
+          STALE
+        </span>
       </p>
     </div>
     <div class="flex items-center gap-2">
