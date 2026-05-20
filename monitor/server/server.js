@@ -74,10 +74,12 @@ app.post('/auth/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }))
 })
 
-// Temporary diagnostic: log every /update attempt (incl. auth failures).
+// Log only auth failures on /update — useful when central.lua can't reach the
+// server (wrong API key, mis-set on the CC side).
 app.post('/update', (req, res, next) => {
-  const ok = req.headers['x-api-key'] === process.env.API_KEY
-  console.log(`[update] from ${req.ip} key=${ok ? 'OK' : 'BAD/MISSING'} bytes=${JSON.stringify(req.body || {}).length}`)
+  if (req.headers['x-api-key'] !== process.env.API_KEY) {
+    console.warn(`[update] auth failed from ${req.ip}`)
+  }
   next()
 })
 
@@ -172,9 +174,6 @@ app.post('/push/subscribe', requireAuth, (req, res) => {
   const entry = { subscription, prefs: prefs || {} }
   if (idx > -1) pushSubscriptions[idx] = entry
   else pushSubscriptions.push(entry)
-  console.log(
-    `[push] subscription ${idx > -1 ? 'updated' : 'registered'} — total ${pushSubscriptions.length}`
-  )
   res.json({ ok: true })
 })
 
@@ -199,17 +198,11 @@ async function sendPushNotification(type, title, body, data = {}, actions = []) 
     data: { ...data, type },
     actions
   })
-  let sent = 0
-  let skipped = 0
   for (let i = pushSubscriptions.length - 1; i >= 0; i--) {
     const { subscription, prefs } = pushSubscriptions[i]
-    if (prefs && prefs[type] === false) {
-      skipped++
-      continue
-    }
+    if (prefs && prefs[type] === false) continue
     try {
       await webpush.sendNotification(subscription, payload)
-      sent++
     } catch (err) {
       console.error(`[push] send failed (${err.statusCode || '?'}): ${err.body || err.message}`)
       if (err.statusCode === 404 || err.statusCode === 410) {
@@ -217,9 +210,6 @@ async function sendPushNotification(type, title, body, data = {}, actions = []) 
       }
     }
   }
-  console.log(
-    `[push] ${type} "${title}" — sent ${sent}, skipped ${skipped}, subs ${pushSubscriptions.length}`
-  )
 }
 
 // Friendly label from farms.json, falling back to the raw id.
