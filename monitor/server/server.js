@@ -11,6 +11,7 @@ const { WebSocketServer, WebSocket } = require('ws')
 const webpush = require('web-push')
 const rateLimit = require('express-rate-limit')
 const farmsRepo = require('./farmsRepo')
+const { validateFarm, validateWing, validateCentralId } = require('./validate')
 
 // VAPID is optional — without keys the server still runs, push is just disabled.
 const PUSH_ENABLED = Boolean(
@@ -60,6 +61,14 @@ const requireAuth = (req, res, next) => {
     return res.status(401).json({ error: 'Not authenticated' })
   }
   next()
+}
+
+// Farm CRUD is reachable from the dashboard (session cookie) AND in-game
+// (manage.lua sends the API key), so accept either.
+const requireAuthOrApiKey = (req, res, next) => {
+  if (req.session && req.session.authenticated) return next()
+  if (req.headers['x-api-key'] === process.env.API_KEY) return next()
+  return res.status(401).json({ error: 'Unauthorized' })
 }
 
 // --- Auth routes -----------------------------------------------------------
@@ -115,6 +124,13 @@ app.get('/commands', requireApiKey, (req, res) => {
   res.json(commands)
 })
 
+// Farm config for CC computers (central.lua + universal_farm.lua). Same body as
+// /api/farms-config, but API-key auth instead of a session cookie. This is what
+// lets the Lua side read the live DB instead of GitHub raw (Milestone S4).
+app.get('/config', requireApiKey, (req, res) => {
+  res.json(farmsRepo.assembleConfig())
+})
+
 // Command queue endpoint — dashboard → queue → CC:Tweaked polls /commands.
 const FARM_COMMANDS = ['farm_override_on', 'farm_override_off', 'farm_clear_override']
 const VALID_COMMANDS = [...FARM_COMMANDS, 'shutdown_all', 'resume_all', 'shutdown_priority']
@@ -153,6 +169,80 @@ app.get('/api/status', requireAuth, (req, res) => {
 // (Milestone S2) with no git push or restart.
 app.get('/api/farms-config', requireAuth, (req, res) => {
   res.json(farmsRepo.assembleConfig())
+})
+
+// --- Farm CRUD (dashboard session OR in-game API key) ----------------------
+app.get('/api/farms', requireAuthOrApiKey, (req, res) => {
+  res.json(farmsRepo.listFarms())
+})
+
+app.get('/api/farms/:id', requireAuthOrApiKey, (req, res) => {
+  const farm = farmsRepo.getFarm(req.params.id)
+  if (!farm) return res.status(404).json({ error: 'Farm not found' })
+  res.json(farm)
+})
+
+app.post('/api/farms', requireAuthOrApiKey, (req, res) => {
+  const { ok, errors, warnings, value } = validateFarm(req.body, { isUpdate: false })
+  if (!ok) return res.status(400).json({ error: errors[0], errors })
+  res.status(201).json({ ok: true, farm: farmsRepo.createFarm(value), warnings })
+})
+
+app.put('/api/farms/:id', requireAuthOrApiKey, (req, res) => {
+  const result = validateFarm(req.body, { isUpdate: true, currentId: req.params.id })
+  if (result.notFound) return res.status(404).json({ error: 'Farm not found' })
+  if (!result.ok) return res.status(400).json({ error: result.errors[0], errors: result.errors })
+  res.json({ ok: true, farm: farmsRepo.updateFarm(req.params.id, result.value), warnings: result.warnings })
+})
+
+app.delete('/api/farms/:id', requireAuthOrApiKey, (req, res) => {
+  if (!farmsRepo.deleteFarm(req.params.id)) {
+    return res.status(404).json({ error: 'Farm not found' })
+  }
+  res.json({ ok: true })
+})
+
+// --- Wing CRUD -------------------------------------------------------------
+app.get('/api/wings', requireAuthOrApiKey, (req, res) => {
+  res.json(farmsRepo.listWings())
+})
+
+app.post('/api/wings', requireAuthOrApiKey, (req, res) => {
+  const { ok, errors, value } = validateWing(req.body, { isUpdate: false })
+  if (!ok) return res.status(400).json({ error: errors[0], errors })
+  res.status(201).json({ ok: true, wing: farmsRepo.createWing(value) })
+})
+
+app.put('/api/wings/:id', requireAuthOrApiKey, (req, res) => {
+  const result = validateWing(req.body, { isUpdate: true, currentId: req.params.id })
+  if (result.notFound) return res.status(404).json({ error: 'Wing not found' })
+  if (!result.ok) return res.status(400).json({ error: result.errors[0], errors: result.errors })
+  res.json({ ok: true, wing: farmsRepo.updateWing(req.params.id, result.value) })
+})
+
+app.delete('/api/wings/:id', requireAuthOrApiKey, (req, res) => {
+  // Don't orphan farms — refuse to delete a wing that still has any.
+  const n = farmsRepo.farmCountInWing(req.params.id)
+  if (n > 0) return res.status(409).json({ error: `Wing has ${n} farm(s); move or delete them first` })
+  if (!farmsRepo.deleteWing(req.params.id)) {
+    return res.status(404).json({ error: 'Wing not found' })
+  }
+  res.json({ ok: true })
+})
+
+// --- Settings (central_computer_id) ----------------------------------------
+app.get('/api/settings', requireAuthOrApiKey, (req, res) => {
+  res.json({ central_computer_id: farmsRepo.centralComputerId() })
+})
+
+app.put('/api/settings', requireAuthOrApiKey, (req, res) => {
+  const { central_computer_id } = req.body || {}
+  if (central_computer_id !== undefined) {
+    const { ok, errors, value } = validateCentralId(central_computer_id)
+    if (!ok) return res.status(400).json({ error: errors[0], errors })
+    farmsRepo.setSetting('central_computer_id', value)
+  }
+  res.json({ ok: true, central_computer_id: farmsRepo.centralComputerId() })
 })
 
 // --- Web Push --------------------------------------------------------------
