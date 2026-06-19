@@ -5,12 +5,12 @@
 require('dotenv').config()
 const http = require('http')
 const path = require('path')
-const fs = require('fs')
 const express = require('express')
 const session = require('express-session')
 const { WebSocketServer, WebSocket } = require('ws')
 const webpush = require('web-push')
 const rateLimit = require('express-rate-limit')
+const farmsRepo = require('./farmsRepo')
 
 // VAPID is optional — without keys the server still runs, push is just disabled.
 const PUSH_ENABLED = Boolean(
@@ -147,23 +147,12 @@ app.get('/api/status', requireAuth, (req, res) => {
   res.json(latestState || {})
 })
 
-// Farm config — single source of truth, read from the repo (minecraft/farms.json).
-// Loaded once at startup; `pm2 restart` after a git pull picks up edits.
-let farmsConfig = null
-function loadFarmsConfig() {
-  try {
-    const p = path.join(__dirname, '../../minecraft/farms.json')
-    farmsConfig = JSON.parse(fs.readFileSync(p, 'utf8'))
-    console.log('Loaded farms config:', farmsConfig.farms.length, 'farms')
-  } catch (err) {
-    console.error('Could not load farms.json:', err.message)
-  }
-}
-loadFarmsConfig()
-
+// Farm config — single source of truth is now the SQLite DB (data/cabin.db),
+// seeded once from minecraft/farms.json. assembleConfig() rebuilds the same
+// JSON shape the dashboard already consumes. Edits go live via the CRUD API
+// (Milestone S2) with no git push or restart.
 app.get('/api/farms-config', requireAuth, (req, res) => {
-  if (!farmsConfig) return res.status(500).json({ error: 'farms.json not loaded' })
-  res.json(farmsConfig)
+  res.json(farmsRepo.assembleConfig())
 })
 
 // --- Web Push --------------------------------------------------------------
@@ -223,9 +212,9 @@ async function sendPushNotification(type, title, body, data = {}, actions = []) 
   }
 }
 
-// Friendly label from farms.json, falling back to the raw id.
+// Friendly label from the DB, falling back to the raw id.
 function farmLabel(id) {
-  const f = farmsConfig && farmsConfig.farms.find((x) => x.id === id)
+  const f = farmsRepo.getFarm(id)
   return (f && f.label) || id
 }
 
