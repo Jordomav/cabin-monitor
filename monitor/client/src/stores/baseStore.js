@@ -97,6 +97,33 @@ export const useBaseStore = defineStore('base', () => {
     }
   }
 
+  // --- Farm / wing / settings CRUD (Manage Farms panel) --------------------
+  // Each mutation refreshes farmsConfig so FarmGrid + the manage UI reflect the
+  // change immediately. Returns { ok, error, errors, warnings } for the caller
+  // to surface; the server stays authoritative on validation.
+  async function mutate(fn) {
+    try {
+      const res = await fn()
+      await loadFarmsConfig()
+      return { ok: true, warnings: (res && res.warnings) || [] }
+    } catch (err) {
+      return {
+        ok: false,
+        error: err.message || 'Request failed',
+        errors: (err.data && err.data.errors) || []
+      }
+    }
+  }
+
+  const createFarm = (payload) => mutate(() => api.post('/api/farms', payload))
+  const updateFarm = (id, payload) => mutate(() => api.put(`/api/farms/${id}`, payload))
+  const deleteFarm = (id) => mutate(() => api.del(`/api/farms/${id}`))
+  const createWing = (payload) => mutate(() => api.post('/api/wings', payload))
+  const updateWing = (id, payload) => mutate(() => api.put(`/api/wings/${id}`, payload))
+  const deleteWing = (id) => mutate(() => api.del(`/api/wings/${id}`))
+  const updateCentralId = (central_computer_id) =>
+    mutate(() => api.put('/api/settings', { central_computer_id }))
+
   return {
     power,
     farmStatus,
@@ -112,6 +139,13 @@ export const useBaseStore = defineStore('base', () => {
     applyMessage,
     loadFarmsConfig,
     farmsInWing,
-    sendCommand
+    sendCommand,
+    createFarm,
+    updateFarm,
+    deleteFarm,
+    createWing,
+    updateWing,
+    deleteWing,
+    updateCentralId
   }
 })
