@@ -7,32 +7,9 @@
     "4": "Low"
   },
   "wings": [
-    { "id": "farm_wing", "label": "Farm Wing", "color": "green" },
-    { "id": "chapter_1", "label": "Chapter 1", "color": "blue" },
-    { "id": "chapter_2", "label": "Chapter 2", "color": "blue" },
-    { "id": "chapter_3", "label": "Chapter 3", "color": "blue" },
-    { "id": "chapter_4", "label": "Chapter 4", "color": "blue" },
-    { "id": "chapter_5", "label": "Chapter 5", "color": "blue" },
-    { "id": "power_wing", "label": "Power Wing", "color": "red" }
+    { "id": "floor_0", "label": "Floor 0", "color": "grey" }
   ],
   "farms": [
-    { "id": "wood", "label": "Wood Farm", "computer_id": 2, "priority": 2, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "green", "report_interval": 5 },
-    { "id": "iron", "label": "Iron Farm", "computer_id": 1, "priority": 2, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "back", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "gray", "report_interval": 5 },
-    { "id": "andesite", "label": "Andesite Farm", "computer_id": 4, "priority": 2, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "lightGray", "report_interval": 5 },
-    { "id": "brass", "label": "Brass Farm", "computer_id": 13, "priority": 2, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "yellow", "report_interval": 5 },
-    { "id": "gold", "label": "Gold Farm", "computer_id": 8, "priority": 3, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "yellow", "report_interval": 5 },
-    { "id": "copper", "label": "Copper Farm", "computer_id": 9, "priority": 3, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "orange", "report_interval": 5 },
-    { "id": "zinc", "label": "Zinc Farm", "computer_id": 10, "priority": 3, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "lightBlue", "report_interval": 5 },
-    { "id": "concrete", "label": "Concrete Farm", "computer_id": 12, "priority": 3, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "gray", "report_interval": 5 },
-    { "id": "cobble", "label": "Cobble Farm", "computer_id": 5, "priority": 4, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "gray", "report_interval": 5 },
-    { "id": "gravel", "label": "Gravel Farm", "computer_id": 6, "priority": 4, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "brown", "report_interval": 5 },
-    { "id": "sand", "label": "Sand Farm", "computer_id": 7, "priority": 4, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "yellow", "report_interval": 5 },
-    { "id": "granite", "label": "Granite Farm", "computer_id": 11, "priority": 4, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "farm_wing", "color": "pink", "report_interval": 5 },
-    { "id": "mechanism", "label": "Mechanism Line", "computer_id": 14, "priority": 1, "high_threshold": 95, "low_threshold": 30, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "chapter_4", "color": "yellow", "report_interval": 5 },
-    { "id": "chapter_1", "label": "Chapter 1", "computer_id": 15, "priority": 1, "high_threshold": 95, "low_threshold": 30, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "chapter_1", "color": "blue", "report_interval": 5 },
-    { "id": "chapter_2", "label": "Chapter 2", "computer_id": 16, "priority": 1, "high_threshold": 95, "low_threshold": 30, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "chapter_2", "color": "blue", "report_interval": 5 },
-    { "id": "chapter_3", "label": "Chapter 3", "computer_id": 17, "priority": 1, "high_threshold": 95, "low_threshold": 30, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "chapter_3", "color": "blue", "report_interval": 5 },
-    { "id": "chapter_4", "label": "Chapter 4", "computer_id": 18, "priority": 1, "high_threshold": 95, "low_threshold": 30, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "chapter_4", "color": "blue", "report_interval": 5 },
-    { "id": "chapter_5", "label": "Chapter 5", "computer_id": 19, "priority": 1, "high_threshold": 95, "low_threshold": 30, "monitor_side": "top", "vault_side": "left", "modem_side": "right", "redstone_side": "bottom", "wing": "chapter_5", "color": "blue", "report_interval": 5 }
+    { "id": "silver", "label": "Silver Farm", "computer_id": 1, "priority": 2, "high_threshold": 90, "low_threshold": 50, "monitor_side": "top", "vault_side": "back", "modem_side": "right", "redstone_side": "bottom", "wing": "floor_0", "color": "grey", "report_interval": 5 }
   ]
 }

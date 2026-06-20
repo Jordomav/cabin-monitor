@@ -1,9 +1,19 @@
 -- CABIN Base Monitor — Universal Farm Computer
--- Every farm computer runs THIS one script. It fetches farms.json, finds its
--- own entry by os.getComputerID(), and runs the vault/redstone/rednet loop.
--- No per-computer config.lua. Built per CABIN_Lua_Reference.md.
+-- Every farm computer runs THIS one script. It fetches the farm config from the
+-- web server (/config), finds its own entry by os.getComputerID(), and runs the
+-- vault/redstone/rednet loop. SQLite on the server is the single source of truth.
 
-local GITHUB_RAW = "https://raw.githubusercontent.com/Jordomav/cabin-monitor/main/minecraft/"
+-- Server URL + API key come from farm_env.lua (written by installer.lua) so
+-- re-downloading this script never clobbers them. Placeholders are a fallback.
+local WEB_SERVER_URL = "http://YOUR_DROPLET_IP:3000"
+local WEB_API_KEY    = "REPLACE_WITH_SERVER_API_KEY"
+if fs.exists("farm_env.lua") then
+  local ok, env = pcall(dofile, "farm_env.lua")
+  if ok and type(env) == "table" then
+    WEB_SERVER_URL = env.WEB_SERVER_URL or WEB_SERVER_URL
+    WEB_API_KEY    = env.WEB_API_KEY or WEB_API_KEY
+  end
+end
 
 -- ----- JSON helpers (spelling differs across CC:Tweaked versions) -----------
 local function jsonDecode(s)
@@ -14,41 +24,54 @@ local function jsonDecode(s)
   return nil
 end
 
--- ----- Load farms.json (GitHub first, local cache fallback) ----------------
-local function loadFarmsConfig()
-  local data, body
-  local ok, resp = pcall(http.get, GITHUB_RAW .. "farms.json")
+-- ----- Farm config: web server (/config) first, local cache fallback -------
+local function fetchConfig()
+  local ok, resp = pcall(http.get, WEB_SERVER_URL .. "/config", {
+    ["X-API-Key"] = WEB_API_KEY
+  })
   if ok and resp then
-    body = resp.readAll()
+    local body = resp.readAll()
     resp.close()
-    data = jsonDecode(body)
+    local data = jsonDecode(body)
+    if data and data.farms then
+      local f = fs.open("farms_cache.json", "w")
+      if f then f.write(body) f.close() end
+      return data
+    end
   end
-  if data and body then
-    local f = fs.open("farms_cache.json", "w")
-    if f then f.write(body) f.close() end
-  end
-  if not data and fs.exists("farms_cache.json") then
-    print("GitHub unreachable — using cached farms.json")
-    local f = fs.open("farms_cache.json", "r")
-    data = jsonDecode(f.readAll())
-    f.close()
-  end
-  if not data or not data.farms then
-    error("Cannot load farms.json (no network and no cache).")
-  end
+  return nil
+end
+
+local function loadFromCache()
+  if not fs.exists("farms_cache.json") then return nil end
+  local f = fs.open("farms_cache.json", "r")
+  local data = jsonDecode(f.readAll())
+  f.close()
   return data
 end
 
-local farmsData = loadFarmsConfig()
-local myId = os.getComputerID()
-
-local config
-for _, f in ipairs(farmsData.farms) do
-  if f.computer_id == myId then config = f break end
+local function loadFarmsConfig()
+  local data = fetchConfig()
+  if data then return data end
+  print("Server unreachable — using cached farm config")
+  data = loadFromCache()
+  if data and data.farms then return data end
+  error("Cannot load farm config (no server, no cache).")
 end
+
+local myId = os.getComputerID()
+local function findMyConfig(data)
+  for _, f in ipairs(data.farms) do
+    if f.computer_id == myId then return f end
+  end
+  return nil
+end
+
+local farmsData = loadFarmsConfig()
+local config = findMyConfig(farmsData)
 if not config then
-  print("This computer (ID " .. myId .. ") is not in farms.json.")
-  print("Add an entry with \"computer_id\": " .. myId .. ", push, then reboot.")
+  print("This computer (ID " .. myId .. ") is not in the farm config.")
+  print("Add an entry with computer_id " .. myId .. " (dashboard 🛠 or manage.lua), then reboot.")
   return
 end
 
@@ -151,9 +174,29 @@ local function listenForCommands()
   end
 end
 
+-- ----- config hot-reload ---------------------------------------------------
+-- Re-fetch every ~30s so threshold/priority/label/interval edits apply without
+-- a reboot. Peripheral SIDE changes still need a reboot — sides are wrapped
+-- once at startup above.
+local function refreshConfig()
+  local data = fetchConfig()
+  if not data then return end
+  local mine = findMyConfig(data)
+  if mine then
+    farmsData = data
+    config = mine
+    CENTRAL_ID = data.central_computer_id or CENTRAL_ID
+  end
+end
+
 -- ----- main loop -----------------------------------------------------------
 local function mainLoop()
+  local cycle = 0
   while true do
+    local interval = config.report_interval or 5
+    cycle = cycle + 1
+    if cycle % math.max(1, math.floor(30 / interval)) == 0 then refreshConfig() end
+
     local fill = getVaultFill()
     local running = isFarmRunning()
 
@@ -168,7 +211,7 @@ local function mainLoop()
 
     updateMonitor(fill, running, override)
     sendReport(fill, running)
-    sleep(config.report_interval or 5)
+    sleep(interval)
   end
 end
 

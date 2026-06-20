@@ -1,5 +1,7 @@
 monitor/server/.env
 monitor/server/node_modules/
+# SQLite database (source of truth at runtime; seeded from minecraft/farms.json)
+monitor/server/data/
 monitor/client/node_modules/
 monitor/client/build/
 # Vite build output — populated by `npm run build`, never committed.

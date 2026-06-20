@@ -5,7 +5,7 @@ import { useBaseStore } from '@/stores/baseStore'
 const props = defineProps({
   wsStatus: { type: String, default: 'connecting' }
 })
-defineEmits(['logout', 'open-settings'])
+defineEmits(['logout', 'open-settings', 'open-manage'])
 
 const base = useBaseStore()
 
@@ -72,6 +72,14 @@ const ago = computed(() => {
       </p>
     </div>
     <div class="flex items-center gap-2">
+      <button
+        class="text-base border border-base-line rounded-lg px-2.5 py-1.5
+               active:bg-base-card"
+        aria-label="Manage farms"
+        @click="$emit('open-manage')"
+      >
+        🛠
+      </button>
       <button
         class="text-base border border-base-line rounded-lg px-2.5 py-1.5
                active:bg-base-card"

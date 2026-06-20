@@ -10,6 +10,7 @@ import PowerCard from '@/components/PowerCard.vue'
 import FarmGrid from '@/components/FarmGrid.vue'
 import AlertFeed from '@/components/AlertFeed.vue'
 import SettingsPanel from '@/components/SettingsPanel.vue'
+import ManageFarms from '@/components/ManageFarms.vue'
 
 const auth = useAuthStore()
 const base = useBaseStore()
@@ -19,6 +20,7 @@ const { authenticated, checking } = storeToRefs(auth)
 // session cookie). Messages feed straight into baseStore.
 const wsStatus = ref('connecting')
 const showSettings = ref(false)
+const showManage = ref(false)
 let socket = null
 
 function startSocket() {
@@ -56,6 +58,7 @@ onMounted(auth.checkSession)
       :ws-status="wsStatus"
       @logout="auth.logout"
       @open-settings="showSettings = true"
+      @open-manage="showManage = true"
     />
     <main class="max-w-md mx-auto px-3 pt-3 space-y-3">
       <PowerCard />
@@ -64,5 +67,6 @@ onMounted(auth.checkSession)
     </main>
 
     <SettingsPanel v-if="showSettings" @close="showSettings = false" />
+    <ManageFarms v-if="showManage" @close="showManage = false" />
   </div>
 </template>

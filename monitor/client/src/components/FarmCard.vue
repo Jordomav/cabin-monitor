@@ -11,11 +11,15 @@ const props = defineProps({
 const base = useBaseStore()
 const status = computed(() => props.farm.status)
 
+// Running wins over override so a force-resumed farm reads as RUNNING (green),
+// not OVERRIDE. Orange OVERRIDE is reserved for a farm that's being held OFF;
+// the contextual "Clear Override" button still signals an active override on a
+// running farm.
 const badge = computed(() => {
   const s = status.value
   if (!s || s.online === false) return { text: 'OFFLINE', cls: 'bg-gray-600 text-gray-200' }
-  if (s.override) return { text: 'OVERRIDE', cls: 'bg-orange-600 text-white' }
   if (s.running) return { text: 'RUNNING', cls: 'bg-emerald-600 text-white' }
+  if (s.override) return { text: 'OVERRIDE', cls: 'bg-orange-600 text-white' }
   return { text: 'PAUSED', cls: 'bg-red-600 text-white' }
 })
 

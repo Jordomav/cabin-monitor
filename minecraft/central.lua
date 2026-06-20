@@ -1,16 +1,15 @@
 -- CABIN Base Monitor — Central Control Computer
 -- Aggregates farm reports over rednet, POSTs state to the web server, and
 -- polls for dashboard commands. Built fresh per CABIN_Lua_Reference.md.
--- Farm/priority tables are loaded dynamically from farms.json (single source
--- of truth) — nothing about farms is hardcoded here.
+-- Farm/priority tables are fetched dynamically from the web server's /config
+-- endpoint (SQLite is the single source of truth) — nothing about farms is
+-- hardcoded here, and the config is re-fetched periodically so edits go live.
 
 -- ===== DEPLOY CONFIG — EDIT THESE ON THE CENTRAL COMPUTER ===================
 -- TODO: point at the Digital Ocean droplet running the Node server.
 local WEB_SERVER_URL  = "http://YOUR_DROPLET_IP:3000"
 -- TODO: must exactly match API_KEY in monitor/server/.env on the droplet.
 local WEB_API_KEY     = "REPLACE_WITH_SERVER_API_KEY"
--- Repo is fixed; only change if you fork.
-local GITHUB_RAW      = "https://raw.githubusercontent.com/Jordomav/cabin-monitor/main/minecraft/"
 local MONITOR_SIDE    = "top"      -- large monitor (optional — display is skipped if absent)
 local MODEM_SIDE      = "right"    -- wireless modem (required for rednet)
 local REPORT_INTERVAL = 3          -- seconds between web POST + command poll
@@ -27,41 +26,68 @@ local function jsonDecode(s)
 end
 local function jsonEncode(t) return textutils.serializeJSON(t) end
 
--- ----- Farm config: GitHub first, local cache fallback ---------------------
-local function loadFarmsConfig()
-  local data, body
-  local ok, resp = pcall(http.get, GITHUB_RAW .. "farms.json")
+-- ----- Farm config: fetched from the web server (/config), cache fallback --
+-- SQLite on the server is the single source of truth; central no longer reads
+-- GitHub. farms_cache.json only covers a server-unreachable boot.
+local function fetchConfig()
+  local ok, resp = pcall(http.get, WEB_SERVER_URL .. "/config", {
+    ["X-API-Key"] = WEB_API_KEY
+  })
   if ok and resp then
-    body = resp.readAll()
+    local body = resp.readAll()
     resp.close()
-    data = jsonDecode(body)
+    local data = jsonDecode(body)
+    if data and data.farms then
+      local f = fs.open("farms_cache.json", "w")
+      if f then f.write(body) f.close() end
+      return data
+    end
   end
-  if data and body then
-    local f = fs.open("farms_cache.json", "w")
-    if f then f.write(body) f.close() end
-  end
-  if not data and fs.exists("farms_cache.json") then
-    print("GitHub unreachable — using cached farms.json")
-    local f = fs.open("farms_cache.json", "r")
-    data = jsonDecode(f.readAll())
-    f.close()
-  end
-  if not data or not data.farms then
-    error("Cannot load farms.json (no network and no cache). Aborting.")
-  end
+  return nil
+end
+
+local function loadFromCache()
+  if not fs.exists("farms_cache.json") then return nil end
+  local f = fs.open("farms_cache.json", "r")
+  local data = jsonDecode(f.readAll())
+  f.close()
   return data
 end
 
-local farmsData     = loadFarmsConfig()
-local FARM_PRIORITIES = {}
-local FARM_IDS        = {}
-local ID_TO_FARM      = {}
-for _, farm in ipairs(farmsData.farms) do
-  FARM_PRIORITIES[farm.id] = farm.priority
-  FARM_IDS[farm.id]        = farm.computer_id
-  ID_TO_FARM[farm.computer_id] = farm.id
+local farmsData
+local FARM_PRIORITIES, FARM_IDS, ID_TO_FARM = {}, {}, {}
+
+local function rebuildLookups()
+  FARM_PRIORITIES, FARM_IDS, ID_TO_FARM = {}, {}, {}
+  for _, farm in ipairs(farmsData.farms) do
+    FARM_PRIORITIES[farm.id]     = farm.priority
+    FARM_IDS[farm.id]            = farm.computer_id
+    ID_TO_FARM[farm.computer_id] = farm.id
+  end
 end
-print("Loaded " .. #farmsData.farms .. " farms from farms.json")
+
+-- Periodic refresh so dashboard / manage.lua edits go live without a reboot.
+local function refreshConfig()
+  local data = fetchConfig()
+  if data and data.farms then
+    farmsData = data
+    rebuildLookups()
+  end
+end
+
+do
+  local data = fetchConfig()
+  if not data then
+    print("Server unreachable — trying cached farm config")
+    data = loadFromCache()
+  end
+  if not data or not data.farms then
+    error("Cannot load farm config (no server, no cache). Aborting.")
+  end
+  farmsData = data
+  rebuildLookups()
+  print("Loaded " .. #farmsData.farms .. " farms from /config")
+end
 
 -- ----- State ---------------------------------------------------------------
 -- farmStatus[id] = { fill, running, override, online, lastReport(os.clock) }
@@ -285,10 +311,16 @@ local function listenForFarmReports()
 end
 
 -- ----- main loop -----------------------------------------------------------
+-- Re-fetch farm config roughly every 30s so DB edits propagate without reboot.
+local CONFIG_REFRESH_CYCLES = math.max(1, math.floor(30 / REPORT_INTERVAL))
+
 local function mainLoop()
   addAlert("Central control started", "INFO")
   for _, id in pairs(FARM_IDS) do rednet.send(id, { command = "ping" }) end
+  local cycle = 0
   while true do
+    cycle = cycle + 1
+    if cycle % CONFIG_REFRESH_CYCLES == 0 then refreshConfig() end
     checkTimeouts()
     updatePowerStatus()
     postToWebServer()
