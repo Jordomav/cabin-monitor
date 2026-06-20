@@ -61,10 +61,38 @@ local function main()
       local ok, err = download("universal_farm.lua")
       if ok then
         color("\nFarm script installed as startup.lua.", colors.green)
-        color("Next steps:", colors.white)
+        -- Server URL + API key live in farm_env.lua so re-installs (choice 3)
+        -- never wipe them. Leave both blank to keep an existing farm_env.lua.
+        color("\nWeb server URL (e.g. http://1.2.3.4:3000):", colors.white)
+        write("> ")
+        local url = read()
+        color("Server API key:", colors.white)
+        write("> ")
+        local key = read()
+
+        if url ~= "" and key ~= "" then
+          local f = fs.open("farm_env.lua", "w")
+          if f then
+            f.write("-- Written by installer.lua. Edit if your server moves.\n")
+            f.write("return {\n")
+            f.write('  WEB_SERVER_URL = "' .. url .. '",\n')
+            f.write('  WEB_API_KEY = "' .. key .. '"\n')
+            f.write("}\n")
+            f.close()
+            color("Saved server settings to farm_env.lua.", colors.green)
+          else
+            color("Could not write farm_env.lua.", colors.red)
+          end
+        elseif fs.exists("farm_env.lua") then
+          color("Kept existing farm_env.lua.", colors.gray)
+        else
+          color("No server settings entered — re-run installer or create farm_env.lua.", colors.yellow)
+        end
+
+        color("\nNext steps:", colors.white)
         color("  1. Note this computer ID: " .. os.getComputerID(), colors.yellow)
-        color("  2. Add an entry for it in minecraft/farms.json", colors.white)
-        color("  3. git push, then reboot this computer (Ctrl+R)", colors.white)
+        color("  2. Add it as a farm (dashboard 🛠 or manage.lua)", colors.white)
+        color("  3. Reboot this computer (Ctrl+R)", colors.white)
       else
         color("Error: " .. err, colors.red)
       end
