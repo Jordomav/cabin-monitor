@@ -55,6 +55,7 @@ const ago = computed(() => {
   <header
     class="sticky top-0 z-10 bg-base-bg/95 backdrop-blur border-b border-base-line
            px-3 py-3 flex items-center justify-between"
+    style="padding-top: calc(0.75rem + env(safe-area-inset-top))"
   >
     <div>
       <h1 class="text-base font-semibold leading-tight">🏠 CABIN Base Monitor</h1>

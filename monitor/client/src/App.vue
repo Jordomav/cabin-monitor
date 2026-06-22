@@ -53,7 +53,7 @@ onMounted(auth.checkSession)
 
   <LoginPage v-else-if="!authenticated" />
 
-  <div v-else class="min-h-screen pb-10">
+  <div v-else class="min-h-screen pb-10" style="padding-bottom: calc(2.5rem + env(safe-area-inset-bottom))">
     <AppHeader
       :ws-status="wsStatus"
       @logout="auth.logout"

@@ -114,6 +114,7 @@ const card = 'bg-base-card border border-base-line rounded-xl'
     <div class="fixed inset-0 z-50 flex flex-col bg-base-bg">
       <header
         class="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-base-line bg-base-bg"
+        style="padding-top: calc(0.75rem + env(safe-area-inset-top))"
       >
         <button
           v-if="mode === 'form'"
